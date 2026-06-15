@@ -4,6 +4,7 @@ import pygame
 from src.core.settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, TILE_SIZE
 from src.entities.player import Player
 from src.entities.zombie import Zombie
+from src.entities.boss import Boss
 from src.entities.particles import Particles
 from src.entities.loot import LootDrop, roll_drop
 from src.rooms.room import Room, THEME_ORDER, THEMES
@@ -65,6 +66,7 @@ class Game:
         self.zombies = []
         self.bullets = []
         self.loot = []
+        self.boss = None
         self.muzzle_flashes = []
         self.particles = Particles()
         self.popups = Popups()
@@ -112,6 +114,7 @@ class Game:
         self.zombies.clear()
         self.bullets.clear()
         self.loot.clear()
+        self.boss = None
         self.muzzle_flashes.clear()
         self.particles = Particles()
         self.popups = Popups()
@@ -140,6 +143,39 @@ class Game:
             t = 'runner' if roll < 0.3 else ('brute' if roll > 0.9 else 'walker')
             self.zombies.append(Zombie(wx, wy, t))
             return
+
+    def _spawn_boss(self):
+        if self.boss is not None:
+            return
+        best = None
+        for _ in range(80):
+            c = random.randint(2, self.room.cols - 3)
+            r = random.randint(2, self.room.rows - 3)
+            if self.room.grid[r][c] != FLOOR:
+                continue
+            wx = c * TILE_SIZE + TILE_SIZE // 2
+            wy = r * TILE_SIZE + TILE_SIZE // 2
+            dist = (pygame.math.Vector2(wx, wy) - self.player.pos).length()
+            if best is None or dist > best[0]:
+                best = (dist, wx, wy)
+            if dist > 700:
+                break
+        if best:
+            self.boss = Boss(best[1], best[2])
+            self.audio.play('boss_roar', 1.0)
+
+    def _spawn_minion(self):
+        if self.boss is None:
+            return
+        for _ in range(30):
+            ang = random.uniform(0, math.tau)
+            r = random.uniform(120, 240)
+            wx = self.boss.pos.x + math.cos(ang) * r
+            wy = self.boss.pos.y + math.sin(ang) * r
+            c, rr = int(wx // TILE_SIZE), int(wy // TILE_SIZE)
+            if 0 <= rr < self.room.rows and 0 <= c < self.room.cols and self.room.grid[rr][c] == FLOOR:
+                self.zombies.append(Zombie(wx, wy, 'runner' if random.random() < 0.5 else 'walker'))
+                return
 
     def _next_theme(self):
         self._theme_idx = (self._theme_idx + 1) % len(THEME_ORDER)
@@ -230,6 +266,8 @@ class Game:
                 self.state = PAUSED
             elif event.key == pygame.K_SPACE:
                 self.player.start_dash()
+            elif event.key == pygame.K_b:
+                self._spawn_boss()
             elif event.key == pygame.K_TAB:
                 self._next_theme()
             elif event.key == pygame.K_r:
@@ -290,6 +328,10 @@ class Game:
                     self.camera.add_trauma(0.35)
                     self.audio.play_at('snarl', z.pos, listener, base=0.9)
 
+        if self.boss is not None:
+            self._apply_boss_events(self.boss.update(
+                dt, self.player.pos, self.player.hit_rect, self.room.wall_rects))
+
         for b in self.bullets:
             b.update(dt, self.room.wall_rects)
             if b.dead:
@@ -308,6 +350,16 @@ class Game:
                     if killed:
                         self._on_kill(z, b.crit)
                     break
+            if not b.dead and self.boss is not None and not self.boss.dead \
+                    and b.rect.colliderect(self.boss.hit_rect):
+                kb_dir = b.vel.normalize() if b.vel.length() else None
+                killed = self.boss.take_damage(b.damage, kb_dir, min(900, b.damage * 22))
+                self.particles.blood(b.pos.x, b.pos.y, 16 if b.crit else 10, (b.vel.x, b.vel.y))
+                self.particles.spark(b.pos.x, b.pos.y, (b.vel.x, b.vel.y), 4)
+                self.audio.play_at('hit', b.pos, listener, base=0.6)
+                b.dead = True
+                if killed:
+                    self._on_boss_death()
 
         for d in self.loot:
             d.update(dt)
@@ -389,6 +441,39 @@ class Game:
         else:
             self.heartbeat_timer = 0.0
 
+    def _apply_boss_events(self, events):
+        listener = self.player.pos
+        for ev in events:
+            kind = ev[0]
+            if kind == 'player_dmg':
+                _, dmg, d, force = ev
+                if self.player.take_damage(dmg):
+                    self.player.apply_knockback(pygame.math.Vector2(d), force)
+                    self.camera.add_trauma(0.4)
+            elif kind == 'spawn':
+                for _ in range(ev[1]):
+                    self._spawn_minion()
+            elif kind == 'shake':
+                self.camera.add_trauma(ev[1])
+            elif kind == 'sound':
+                self.audio.play_at(ev[1], self.boss.pos, listener, base=1.0)
+            elif kind == 'shockwave':
+                self.particles.spark(ev[1], ev[2], None, 18)
+
+    def _on_boss_death(self):
+        b = self.boss
+        self.score += b.score
+        for _ in range(6):
+            self.particles.blood(b.pos.x + random.randint(-44, 44),
+                                 b.pos.y + random.randint(-44, 44), 30, big=True)
+        self.particles.add_decal(b.pos.x, b.pos.y, big=True)
+        self.camera.add_trauma(1.0)
+        self.hitstop = 0.12
+        self.audio.play('boss_roar', 1.0)
+        self.loot.append(LootDrop(b.pos.x, b.pos.y, 'arsenal'))
+        self.popups.add(b.pos.x, b.pos.y - 30, 'БОСС ПОВЕРЖЕН!', (255, 210, 90))
+        self.boss = None
+
     def _apply_loot(self, drop):
         x, y = drop.pos.x, drop.pos.y
         if drop.kind == 'medkit':
@@ -430,6 +515,8 @@ class Game:
                 self.screen.blit(flash, (0, 0))
             draw_hud(self.screen, self.player, self.score, self.font, self.font_sub,
                      self.room.label, self.combo)
+            if self.boss is not None:
+                self.boss.draw_health_bar(self.screen, self.font_sub)
             if self.state == PLAYING:
                 self._draw_crosshair()
             elif self.state == PAUSED:
@@ -468,15 +555,21 @@ class Game:
             d.draw(self.screen, self.camera)
         for z in self.zombies:
             z.draw(self.screen, self.camera)
+        if self.boss is not None:
+            self.boss.draw(self.screen, self.camera)
         self.player.draw(self.screen, self.camera)
 
         extra = [d.light() for d in self.loot]
+        if self.boss is not None:
+            extra.append(self.boss.light())
         for fl in self.muzzle_flashes:
             k = fl['life'] / fl['max']
             extra.append((fl['x'], fl['y'], int(150 * fl['scale'] * k) + 40, (90, 70, 42)))
         self.room.draw_overlays(self.screen, self.camera, (self.player.pos.x, self.player.pos.y),
                                 extra_lights=extra)
 
+        if self.boss is not None:
+            self.boss.draw_telegraph(self.screen, self.camera)
         for fl in self.muzzle_flashes:
             self._draw_flash(fl)
         for b in self.bullets:

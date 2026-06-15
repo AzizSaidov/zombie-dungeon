@@ -56,6 +56,7 @@ class Player(pygame.sprite.Sprite):
         self.invuln = 0.0
         self.trail = []
         self.step_timer = 0.0
+        self.kb = pygame.math.Vector2(0, 0)
 
         self.weapons = [Weapon('pistol'), Weapon('shotgun'),
                         Weapon('rifle'), Weapon('sniper')]
@@ -81,6 +82,7 @@ class Player(pygame.sprite.Sprite):
         self.invuln = 0.0
         self.trail.clear()
         self.step_timer = 0.0
+        self.kb.update(0, 0)
         self.weapons = [Weapon('pistol'), Weapon('shotgun'),
                         Weapon('rifle'), Weapon('sniper')]
         self.active = 0
@@ -139,6 +141,9 @@ class Player(pygame.sprite.Sprite):
         before = self.hp
         self.hp = min(self.max_hp, self.hp + amount)
         return int(self.hp - before)
+
+    def apply_knockback(self, direction, force):
+        self.kb += direction * force
 
     def add_ammo(self):
         w = self.current()
@@ -199,6 +204,25 @@ class Player(pygame.sprite.Sprite):
                     self.sound_events.append('footstep')
         else:
             self.step_timer = 0.0
+
+        if self.kb.length_squared() > 1:
+            self.pos.x += self.kb.x * dt
+            self.hit_rect.centerx = int(self.pos.x)
+            for wall in wall_rects:
+                if self.hit_rect.colliderect(wall):
+                    if self.kb.x > 0: self.hit_rect.right = wall.left
+                    else:             self.hit_rect.left = wall.right
+                    self.pos.x = self.hit_rect.centerx
+                    self.kb.x = 0
+            self.pos.y += self.kb.y * dt
+            self.hit_rect.centery = int(self.pos.y)
+            for wall in wall_rects:
+                if self.hit_rect.colliderect(wall):
+                    if self.kb.y > 0: self.hit_rect.bottom = wall.top
+                    else:             self.hit_rect.top = wall.bottom
+                    self.pos.y = self.hit_rect.centery
+                    self.kb.y = 0
+            self.kb *= math.exp(-dt * 8)
 
         for t in self.trail:
             t[2] -= dt

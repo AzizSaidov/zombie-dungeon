@@ -15,6 +15,8 @@ ZOMBIE_TYPES = {
                'tint': (120, 210, 120), 'score': 15},
     'brute':  {'hp': 140, 'speed': 46,  'damage': 34, 'scale': 0.40,
                'tint': (200, 170, 130), 'score': 30},
+    'boss':   {'hp': 2400, 'speed': 58, 'damage': 16, 'scale': 0.95,
+               'tint': (118, 150, 92), 'score': 500},
 }
 
 _raw_frames = None

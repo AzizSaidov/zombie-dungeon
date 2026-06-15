@@ -251,6 +251,35 @@ def _dash():
     return out
 
 
+def _boom(dur, base, vol):
+    f = _freq()
+    n = int(f * dur)
+    out = []
+    for i in range(n):
+        t = i / f
+        sweep = base * (1 + 1.6 * math.exp(-t * 22))
+        sub = math.sin(2 * math.pi * sweep * t) * math.exp(-t * 6.5)
+        nz = random.uniform(-1, 1) * math.exp(-t * 9) * 0.45
+        out.append((sub + nz) * vol)
+    return out
+
+
+def _boss_roar(dur, base, vol):
+    f = _freq()
+    n = int(f * dur)
+    out = []
+    for i in range(n):
+        t = i / f
+        rough = 0.5 + 0.5 * math.sin(2 * math.pi * 18 * t)
+        vib = base * (1 + 0.06 * math.sin(2 * math.pi * 3 * t))
+        tone = math.sin(2 * math.pi * vib * t)
+        sub = math.sin(2 * math.pi * vib * 0.5 * t) * 0.7
+        nz = random.uniform(-1, 1) * 0.35
+        env = min(1.0, t * 4) * math.exp(-t * 1.3)
+        out.append((tone * 0.5 + sub + nz * 0.4) * rough * env * vol)
+    return out
+
+
 class Audio:
     def __init__(self):
         try:
@@ -275,6 +304,8 @@ class Audio:
             'dash':         _to_sound(_dash()),
             'heartbeat':    _to_sound(_heartbeat()),
             'zombie_die':   _to_sound(_zombie_die()),
+            'boss_slam':    _to_sound(_verb(_boom(0.55, 48, 0.95), decay=0.45, taps=5, delay=0.05)),
+            'boss_roar':    _to_sound(_boss_roar(1.2, 55, 0.85)),
             'pickup':       _to_sound(_pickup()),
             'heal':         _to_sound(_heal()),
             'reload':       _to_sound(_reload()),
