@@ -7,6 +7,7 @@ from src.entities.zombie import Zombie
 from src.entities.boss import Boss
 from src.entities.particles import Particles
 from src.entities.loot import LootDrop, roll_drop
+from src.entities.pickups import WeaponPickup, Objective, ExitGate
 from src.rooms.room import Room, THEME_ORDER, THEMES
 from src.rooms.layouts import FLOOR
 from src.core.camera import Camera
@@ -30,6 +31,15 @@ WAVE_INTRO_TIME = 2.4
 WAVE_CLEAR_TIME = 3.0
 BOSS_WAVE_EVERY = 5
 
+CAMPAIGN_LEVELS = [
+    {'theme': 'forest',   'cols': 40, 'rows': 30, 'objective': 'key',
+     'weapon': 'shotgun', 'spawn_cap': 9,  'spawn_int': 1.7},
+    {'theme': 'town',     'cols': 44, 'rows': 32, 'objective': 'fuel',
+     'weapon': 'rifle',   'spawn_cap': 12, 'spawn_int': 1.4},
+    {'theme': 'hospital', 'cols': 46, 'rows': 34, 'objective': 'vaccine',
+     'weapon': 'sniper',  'spawn_cap': 14, 'spawn_int': 1.2, 'boss': True},
+]
+
 WEAPON_TRAUMA = {'pistol': 0.12, 'shotgun': 0.34, 'rifle': 0.09, 'sniper': 0.5}
 FLASH_SCALE = {'pistol': 0.9, 'shotgun': 1.5, 'rifle': 1.0, 'sniper': 1.7}
 SFX_VOL = {'footstep': 0.3, 'dash': 0.6, 'casing': 0.4, 'dryfire': 0.7}
@@ -40,6 +50,7 @@ LOCATION_SELECT = 'location_select'
 PLAYING = 'playing'
 PAUSED = 'paused'
 GAME_OVER = 'game_over'
+VICTORY = 'victory'
 
 
 class Game:
@@ -95,12 +106,21 @@ class Game:
         self.new_record = False
         self.best = scores.load_best()
 
+        self.campaign_level = 0
+        self.level_cfg = None
+        self.objective = None
+        self.exit = None
+        self.weapon_pickups = []
+        self.objective_done = False
+        self.campaign_boss_pending = False
+
         self.score = 0
         self.elapsed = 0.0
         self.state = MENU
 
         self.main_menu = Menu("ZOMBIE DUNGEON",
-                              [("Волны", "mode:waves"),
+                              [("Кампания", "mode:campaign"),
+                               ("Волны", "mode:waves"),
                                ("Бесконечно", "mode:endless"),
                                ("Выход", "quit")],
                               subtitle="выживи в темноте")
@@ -115,6 +135,10 @@ class Game:
                               [("Заново", "restart"),
                                ("В главное меню", "menu"),
                                ("Выход", "quit")])
+        self.victory_menu = Menu("ВЫ СПАСЛИСЬ",
+                                 [("Ещё раз", "restart"),
+                                  ("В главное меню", "menu"),
+                                  ("Выход", "quit")])
 
     # ---------- setup ----------
 
@@ -230,6 +254,130 @@ class Game:
             self.popups.add(self.player.pos.x, self.player.pos.y, f'+{got} HP', (120, 230, 120))
         self.audio.play('pickup')
 
+    # ---------- campaign ----------
+
+    def _make_room(self, theme_name, cols, rows):
+        self.room = Room(cols, rows, theme_name)
+        w, h = self.screen.get_size()
+        self.room.resize(w, h)
+        self.camera.room_w = self.room.width
+        self.camera.room_h = self.room.height
+
+    def _find_floor_far(self, avoid, min_dist):
+        best, best_d = None, -1.0
+        for _ in range(200):
+            c = random.randint(2, self.room.cols - 3)
+            r = random.randint(2, self.room.rows - 3)
+            if self.room.grid[r][c] != FLOOR:
+                continue
+            p = pygame.math.Vector2(c * TILE_SIZE + TILE_SIZE // 2, r * TILE_SIZE + TILE_SIZE // 2)
+            d = min((p - a).length() for a in avoid)
+            if d >= min_dist:
+                return (p.x, p.y)
+            if d > best_d:
+                best_d, best = d, (p.x, p.y)
+        return best if best else (self.room.width // 2, self.room.height // 2)
+
+    def _campaign_zombie_type(self, level):
+        return self._wave_zombie_type(level * 4 + 3)
+
+    def _start_campaign(self):
+        self.mode = 'campaign'
+        self.score = 0
+        self.elapsed = 0.0
+        self.new_record = False
+        self.campaign_level = 0
+        self._setup_campaign_level(0, first=True)
+        self.state = PLAYING
+
+    def _setup_campaign_level(self, level, first=False):
+        cfg = CAMPAIGN_LEVELS[level]
+        self.level_cfg = cfg
+        self._theme_idx = THEME_ORDER.index(cfg['theme'])
+        self._make_room(cfg['theme'], cfg['cols'], cfg['rows'])
+
+        sx, sy = self.room.find_spawn()
+        if first:
+            self.player.reset(sx, sy, loadout=['pistol'])
+        else:
+            self.player.place(sx, sy)
+            self.player.heal(40)
+        self.camera.snap((sx, sy))
+
+        self.zombies.clear()
+        self.bullets.clear()
+        self.loot.clear()
+        self.boss = None
+        self.muzzle_flashes.clear()
+        self.particles = Particles()
+        self.popups = Popups()
+        self.spawn_timer = 0.0
+        self.combo = 0
+        self.combo_timer = 0.0
+        self.hitstop = 0.0
+        self.heartbeat_timer = 0.0
+        self.cross_kick = 0.0
+
+        spawn_pt = pygame.math.Vector2(sx, sy)
+        ox, oy = self._find_floor_far([spawn_pt], 620)
+        self.objective = Objective(ox, oy, cfg['objective'])
+        ex, ey = self._find_floor_far([spawn_pt, pygame.math.Vector2(ox, oy)], 520)
+        self.exit = ExitGate(ex, ey)
+        wx, wy = self._find_floor_far([spawn_pt], 300)
+        self.weapon_pickups = [WeaponPickup(wx, wy, cfg['weapon'])]
+        self.objective_done = False
+        self.campaign_boss_pending = cfg.get('boss', False)
+
+        for _ in range(4):
+            self._spawn_zombie(self._campaign_zombie_type(level), ignore_cap=True)
+
+    def _update_campaign(self, dt):
+        cfg = self.level_cfg
+        if len(self.zombies) < cfg['spawn_cap']:
+            self.spawn_timer += dt
+            if self.spawn_timer >= cfg['spawn_int']:
+                self.spawn_timer = 0.0
+                self._spawn_zombie(self._campaign_zombie_type(self.campaign_level), ignore_cap=True)
+
+        for wp in self.weapon_pickups:
+            wp.update(dt)
+            if not wp.taken and wp.near(self.player.pos):
+                wp.taken = True
+                self.player.give_weapon(wp.weapon_id)
+                self.popups.add(wp.pos.x, wp.pos.y, 'НОВОЕ ОРУЖИЕ: ' + wp.name, (170, 225, 245))
+                self.audio.play('pickup')
+        self.weapon_pickups = [w for w in self.weapon_pickups if not w.taken]
+
+        self.objective.update(dt)
+        if not self.objective_done and self.objective.near(self.player.pos):
+            self.objective_done = True
+            self.objective.taken = True
+            self.audio.play('pickup')
+            if self.campaign_boss_pending:
+                self._spawn_boss()
+                self.popups.add(self.objective.pos.x, self.objective.pos.y,
+                                'ВАКЦИНА ВЗЯТА — УБЕЙ БОССА!', (255, 120, 90))
+            else:
+                self.exit.open = True
+                self.popups.add(self.objective.pos.x, self.objective.pos.y,
+                                self.objective.label + ' ВЗЯТ — К ВЫХОДУ!', (235, 220, 120))
+
+        self.exit.update(dt)
+        if self.campaign_boss_pending and self.objective_done and self.boss is None and not self.exit.open:
+            self.exit.open = True
+            self.popups.add(self.exit.pos.x, self.exit.pos.y, 'ВЫХОД ОТКРЫТ!', (150, 240, 150))
+        if self.exit.near(self.player.pos):
+            self._advance_campaign()
+
+    def _advance_campaign(self):
+        self.campaign_level += 1
+        if self.campaign_level >= len(CAMPAIGN_LEVELS):
+            self.state = VICTORY
+            self.audio.play('heal')
+        else:
+            self.audio.play('pickup')
+            self._setup_campaign_level(self.campaign_level)
+
     def _spawn_boss(self):
         if self.boss is not None:
             return
@@ -289,14 +437,19 @@ class Game:
         self.room.resize(w, h)
 
     def _do_action(self, action):
-        if action.startswith("mode:"):
+        if action == "mode:campaign":
+            self._start_campaign()
+        elif action.startswith("mode:"):
             self.mode = action[5:]
             self.loc_menu.sel = 0
             self.state = LOCATION_SELECT
         elif action.startswith("loc:"):
             self.start_game(THEME_ORDER.index(action[4:]))
         elif action == "restart":
-            self.start_game(self._theme_idx)
+            if self.mode == 'campaign':
+                self._start_campaign()
+            else:
+                self.start_game(self._theme_idx)
         elif action == "resume":
             self.state = PLAYING
         elif action == "menu":
@@ -329,6 +482,8 @@ class Game:
                 self._menu_events(event, self.pause_menu, back="resume")
             elif self.state == GAME_OVER:
                 self._menu_events(event, self.over_menu, back=None)
+            elif self.state == VICTORY:
+                self._menu_events(event, self.victory_menu, back=None)
             elif self.state == PLAYING:
                 self._play_events(event)
 
@@ -471,6 +626,8 @@ class Game:
 
         if self.mode == 'waves':
             self._update_waves(dt)
+        elif self.mode == 'campaign':
+            self._update_campaign(dt)
         else:
             self.spawn_timer += dt
             if self.spawn_timer >= SPAWN_EVERY:
@@ -622,6 +779,8 @@ class Game:
             if self.state == PLAYING:
                 if self.mode == 'waves':
                     self._draw_wave_banner()
+                elif self.mode == 'campaign':
+                    self._draw_campaign_hud()
                 self._draw_crosshair()
             elif self.state == PAUSED:
                 self._dim(150)
@@ -631,6 +790,10 @@ class Game:
                 self.over_menu.draw(self.screen, self.fonts, self.elapsed, accent=(150, 20, 20))
                 if self.mode == 'waves':
                     self._draw_gameover_stats()
+            elif self.state == VICTORY:
+                self._dim(180)
+                self.victory_menu.draw(self.screen, self.fonts, self.elapsed, accent=(60, 180, 90))
+                self._draw_victory_stats()
 
         fps = int(self.clock.get_fps())
         pygame.display.set_caption(f"{TITLE}  |  FPS: {fps}")
@@ -655,6 +818,57 @@ class Game:
         self.screen.blit(big, big.get_rect(center=(cx, cy)))
         ss = self.font_opt.render(sub, True, (205, 205, 205))
         self.screen.blit(ss, ss.get_rect(center=(cx, cy + 58)))
+
+    def _draw_campaign_hud(self):
+        if self.objective is None:
+            return
+        w, h = self.screen.get_size()
+        stage = self.font_sub.render(f"Этап {self.campaign_level + 1}/{len(CAMPAIGN_LEVELS)}",
+                                     True, (200, 200, 200))
+        ssh = self.font_sub.render(f"Этап {self.campaign_level + 1}/{len(CAMPAIGN_LEVELS)}",
+                                   True, (0, 0, 0))
+        self.screen.blit(ssh, (22, 56))
+        self.screen.blit(stage, (20, 54))
+
+        if not self.objective_done:
+            text, target, col = f"ЦЕЛЬ: найти {self.objective.label}", self.objective.pos, self.objective.color
+        elif self.campaign_boss_pending and self.boss is not None:
+            text, target, col = "УБЕЙ БОССА", self.boss.pos, (235, 90, 70)
+        elif self.exit.open:
+            text, target, col = "К ВЫХОДУ", self.exit.pos, (150, 240, 150)
+        else:
+            text, target, col = "", None, (220, 220, 220)
+        if text:
+            t = self.font.render(text, True, col)
+            sh = self.font.render(text, True, (0, 0, 0))
+            self.screen.blit(sh, sh.get_rect(center=(w // 2 + 2, 30)))
+            self.screen.blit(t, t.get_rect(center=(w // 2, 28)))
+        if target is not None:
+            self._draw_target_arrow(target, col)
+
+    def _draw_target_arrow(self, target, col):
+        w, h = self.screen.get_size()
+        tx, ty = self.camera.world_to_screen(target.x, target.y)
+        margin = 80
+        if margin < tx < w - margin and margin < ty < h - margin:
+            return
+        cx, cy = w / 2, h / 2
+        ang = math.atan2(ty - cy, tx - cx)
+        px = cx + math.cos(ang) * (w / 2 - margin)
+        py = cy + math.sin(ang) * (h / 2 - margin)
+        size = 16
+        pts = [(px + math.cos(ang) * size, py + math.sin(ang) * size),
+               (px + math.cos(ang + 2.5) * size, py + math.sin(ang + 2.5) * size),
+               (px + math.cos(ang - 2.5) * size, py + math.sin(ang - 2.5) * size)]
+        pygame.draw.polygon(self.screen, (0, 0, 0), [(x + 2, y + 2) for x, y in pts])
+        pygame.draw.polygon(self.screen, col, pts)
+
+    def _draw_victory_stats(self):
+        w, h = self.screen.get_size()
+        s = self.font.render(f"Очки {self.score}", True, (230, 235, 230))
+        sh = self.font.render(f"Очки {self.score}", True, (0, 0, 0))
+        self.screen.blit(sh, sh.get_rect(center=(w // 2 + 2, int(h * 0.4) + 2)))
+        self.screen.blit(s, s.get_rect(center=(w // 2, int(h * 0.4))))
 
     def _draw_gameover_stats(self):
         w, h = self.screen.get_size()
@@ -693,6 +907,12 @@ class Game:
         self.particles.draw_decals(self.screen, self.camera)
         for d in self.loot:
             d.draw(self.screen, self.camera)
+        if self.mode == 'campaign':
+            self.exit.draw(self.screen, self.camera, self.font_sub)
+            if not self.objective_done:
+                self.objective.draw(self.screen, self.camera, self.font_sub)
+            for wp in self.weapon_pickups:
+                wp.draw(self.screen, self.camera, self.font_sub)
         for z in self.zombies:
             z.draw(self.screen, self.camera)
         if self.boss is not None:
@@ -700,6 +920,11 @@ class Game:
         self.player.draw(self.screen, self.camera)
 
         extra = [d.light() for d in self.loot]
+        if self.mode == 'campaign':
+            extra.append(self.exit.light())
+            if not self.objective_done:
+                extra.append(self.objective.light())
+            extra.extend(wp.light() for wp in self.weapon_pickups)
         if self.boss is not None:
             extra.append(self.boss.light())
         for fl in self.muzzle_flashes:

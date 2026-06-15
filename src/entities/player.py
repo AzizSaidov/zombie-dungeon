@@ -74,24 +74,37 @@ class Player(pygame.sprite.Sprite):
     def current(self):
         return self.weapons[self.active]
 
-    def reset(self, x, y):
+    def reset(self, x, y, loadout=None):
         self.hp = self.max_hp
         self.hurt_timer = 0.0
+        ids = loadout if loadout is not None else ['pistol', 'shotgun', 'rifle', 'sniper']
+        self.weapons = [Weapon(wid) for wid in ids]
+        self.active = 0
+        self.place(x, y)
+        self.sound_events.clear()
+
+    def place(self, x, y):
         self.dash_t = 0.0
         self.dash_cd = 0.0
         self.invuln = 0.0
         self.trail.clear()
         self.step_timer = 0.0
         self.kb.update(0, 0)
-        self.weapons = [Weapon('pistol'), Weapon('shotgun'),
-                        Weapon('rifle'), Weapon('sniper')]
-        self.active = 0
         self.prev_fire = False
         self.just_fired = False
-        self.sound_events.clear()
         self.pos.update(x, y)
         self.hit_rect.center = (int(x), int(y))
         self.rect.center = (int(x), int(y))
+
+    def give_weapon(self, wid):
+        for i, w in enumerate(self.weapons):
+            if w.id == wid:
+                w.refill()
+                self.active = i
+                return False
+        self.weapons.append(Weapon(wid))
+        self.active = len(self.weapons) - 1
+        return True
 
     def start_dash(self):
         if self.dash_cd > 0 or self.dash_t > 0:
