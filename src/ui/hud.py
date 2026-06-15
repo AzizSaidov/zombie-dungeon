@@ -1,13 +1,19 @@
 import pygame
 
 
-def draw_hud(surface, player, score, font, font_sub, location_label, combo=0):
+def draw_hud(surface, player, score, font, font_sub, location_label, combo=0, wave=0):
     w, h = surface.get_size()
 
     shadow = font.render(location_label, True, (0, 0, 0))
     label = font.render(location_label, True, (210, 210, 210))
     surface.blit(shadow, (22, 22))
     surface.blit(label, (20, 20))
+
+    if wave > 0:
+        wsh = font.render(f"Волна {wave}", True, (0, 0, 0))
+        wtxt = font.render(f"Волна {wave}", True, (235, 210, 140))
+        surface.blit(wsh, (22, 56))
+        surface.blit(wtxt, (20, 54))
 
     bar_x, bar_y = 20, h - 46
     bar_w, bar_h = 280, 26

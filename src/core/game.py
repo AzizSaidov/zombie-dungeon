@@ -12,6 +12,7 @@ from src.rooms.layouts import FLOOR
 from src.core.camera import Camera
 from src.core.audio import Audio
 from src.core.effects import Popups
+from src.core import scores
 from src.ui.menu import Menu
 from src.ui.hud import draw_hud
 
@@ -24,6 +25,10 @@ LOOK_MAX = 220
 MAX_ZOMBIES = 16
 SPAWN_EVERY = 1.6
 INITIAL_ZOMBIES = 8
+
+WAVE_INTRO_TIME = 2.4
+WAVE_CLEAR_TIME = 3.0
+BOSS_WAVE_EVERY = 5
 
 WEAPON_TRAUMA = {'pistol': 0.12, 'shotgun': 0.34, 'rifle': 0.09, 'sniper': 0.5}
 FLASH_SCALE = {'pistol': 0.9, 'shotgun': 1.5, 'rifle': 1.0, 'sniper': 1.7}
@@ -78,12 +83,26 @@ class Game:
         self.heartbeat_timer = 0.0
         self.cross_kick = 0.0
 
+        self.mode = 'waves'
+        self.wave = 0
+        self.wave_state = 'intro'
+        self.wave_timer = 0.0
+        self.wave_spawn_timer = 0.0
+        self.wave_interval = 1.2
+        self.wave_max_alive = 10
+        self.wave_is_boss = False
+        self.to_spawn = 0
+        self.new_record = False
+        self.best = scores.load_best()
+
         self.score = 0
         self.elapsed = 0.0
         self.state = MENU
 
         self.main_menu = Menu("ZOMBIE DUNGEON",
-                              [("Играть", "select"), ("Выход", "quit")],
+                              [("Волны", "mode:waves"),
+                               ("Бесконечно", "mode:endless"),
+                               ("Выход", "quit")],
                               subtitle="выживи в темноте")
         loc_opts = [(THEMES[name]['label'], "loc:" + name) for name in THEME_ORDER]
         loc_opts.append(("Назад", "menu"))
@@ -102,9 +121,10 @@ class Game:
     def start_game(self, theme_idx=0):
         self._theme_idx = theme_idx
         self.room.set_theme(THEME_ORDER[theme_idx])
-        self._reset_level()
         self.score = 0
         self.elapsed = 0.0
+        self.new_record = False
+        self._reset_level()
         self.state = PLAYING
 
     def _reset_level(self):
@@ -124,12 +144,15 @@ class Game:
         self.hitstop = 0.0
         self.heartbeat_timer = 0.0
         self.cross_kick = 0.0
-        for _ in range(INITIAL_ZOMBIES):
-            self._spawn_zombie()
+        if self.mode == 'waves':
+            self._start_wave(1)
+        else:
+            for _ in range(INITIAL_ZOMBIES):
+                self._spawn_zombie()
 
-    def _spawn_zombie(self):
-        if len(self.zombies) >= MAX_ZOMBIES:
-            return
+    def _spawn_zombie(self, type_name=None, ignore_cap=False):
+        if not ignore_cap and len(self.zombies) >= MAX_ZOMBIES:
+            return False
         for _ in range(40):
             c = random.randint(2, self.room.cols - 3)
             r = random.randint(2, self.room.rows - 3)
@@ -139,10 +162,73 @@ class Game:
             wy = r * TILE_SIZE + TILE_SIZE // 2
             if (pygame.math.Vector2(wx, wy) - self.player.pos).length() < 460:
                 continue
-            roll = random.random()
-            t = 'runner' if roll < 0.3 else ('brute' if roll > 0.9 else 'walker')
+            if type_name is None:
+                roll = random.random()
+                t = 'runner' if roll < 0.3 else ('brute' if roll > 0.9 else 'walker')
+            else:
+                t = type_name
             self.zombies.append(Zombie(wx, wy, t))
-            return
+            return True
+        return False
+
+    # ---------- waves ----------
+
+    def _wave_plan(self, n):
+        is_boss = (n % BOSS_WAVE_EVERY == 0)
+        quota = 6 + n * 2
+        max_alive = min(8 + n, 22)
+        interval = max(0.35, 1.4 - n * 0.06)
+        return quota, max_alive, interval, is_boss
+
+    def _wave_zombie_type(self, n):
+        brute_ch = min(0.26, 0.04 + n * 0.02)
+        runner_ch = min(0.45, 0.18 + n * 0.02)
+        r = random.random()
+        if r < brute_ch:
+            return 'brute'
+        if r < brute_ch + runner_ch:
+            return 'runner'
+        return 'walker'
+
+    def _start_wave(self, n):
+        self.wave = n
+        quota, max_alive, interval, is_boss = self._wave_plan(n)
+        self.wave_max_alive = max_alive
+        self.wave_interval = interval
+        self.wave_spawn_timer = 0.6
+        self.wave_is_boss = is_boss
+        self.to_spawn = 4 if is_boss else quota
+        self.wave_state = 'intro'
+        self.wave_timer = WAVE_INTRO_TIME
+
+    def _update_waves(self, dt):
+        if self.wave_state == 'intro':
+            self.wave_timer -= dt
+            if self.wave_timer <= 0:
+                self.wave_state = 'active'
+                if self.wave_is_boss:
+                    self._spawn_boss()
+        elif self.wave_state == 'active':
+            if self.to_spawn > 0 and len(self.zombies) < self.wave_max_alive:
+                self.wave_spawn_timer -= dt
+                if self.wave_spawn_timer <= 0:
+                    if self._spawn_zombie(self._wave_zombie_type(self.wave), ignore_cap=True):
+                        self.to_spawn -= 1
+                        self.wave_spawn_timer = self.wave_interval
+            if self.to_spawn <= 0 and not self.zombies and self.boss is None:
+                self._clear_wave()
+        elif self.wave_state == 'cleared':
+            self.wave_timer -= dt
+            if self.wave_timer <= 0:
+                self._start_wave(self.wave + 1)
+
+    def _clear_wave(self):
+        self.wave_state = 'cleared'
+        self.wave_timer = WAVE_CLEAR_TIME
+        got = self.player.heal(20)
+        if got > 0:
+            self.popups.add(self.player.pos.x, self.player.pos.y, f'+{got} HP', (120, 230, 120))
+        self.audio.play('pickup')
 
     def _spawn_boss(self):
         if self.boss is not None:
@@ -203,7 +289,8 @@ class Game:
         self.room.resize(w, h)
 
     def _do_action(self, action):
-        if action == "select":
+        if action.startswith("mode:"):
+            self.mode = action[5:]
             self.loc_menu.sel = 0
             self.state = LOCATION_SELECT
         elif action.startswith("loc:"):
@@ -382,10 +469,13 @@ class Game:
             if self.combo_timer == 0:
                 self.combo = 0
 
-        self.spawn_timer += dt
-        if self.spawn_timer >= SPAWN_EVERY:
-            self.spawn_timer = 0.0
-            self._spawn_zombie()
+        if self.mode == 'waves':
+            self._update_waves(dt)
+        else:
+            self.spawn_timer += dt
+            if self.spawn_timer >= SPAWN_EVERY:
+                self.spawn_timer = 0.0
+                self._spawn_zombie()
 
         self.groan_timer -= dt
         if self.groan_timer <= 0 and self.zombies:
@@ -395,7 +485,14 @@ class Game:
         self._update_heartbeat(dt)
 
         if self.player.hp <= 0:
-            self.state = GAME_OVER
+            self._on_game_over()
+
+    def _on_game_over(self):
+        self.state = GAME_OVER
+        self.new_record = False
+        if self.mode == 'waves':
+            self.new_record = scores.save_best(self.wave, self.score)
+            self.best = scores.load_best()
 
     def _on_fire(self):
         wpn = self.player.current()
@@ -505,6 +602,11 @@ class Game:
             self._dim(120)
             menu = self.main_menu if self.state == MENU else self.loc_menu
             menu.draw(self.screen, self.fonts, self.elapsed)
+            if self.state == MENU and self.best['wave'] > 0:
+                rec = self.font_sub.render(
+                    f"Рекорд волн: {self.best['wave']}   ·   очки: {self.best['score']}",
+                    True, (175, 175, 175))
+                self.screen.blit(rec, rec.get_rect(center=(self.scr_w() // 2, int(self.scr_h() * 0.82))))
         else:
             self._draw_play()
             self._draw_low_hp()
@@ -514,10 +616,12 @@ class Game:
                 flash.fill((160, 0, 0, a))
                 self.screen.blit(flash, (0, 0))
             draw_hud(self.screen, self.player, self.score, self.font, self.font_sub,
-                     self.room.label, self.combo)
+                     self.room.label, self.combo, self.wave if self.mode == 'waves' else 0)
             if self.boss is not None:
                 self.boss.draw_health_bar(self.screen, self.font_sub)
             if self.state == PLAYING:
+                if self.mode == 'waves':
+                    self._draw_wave_banner()
                 self._draw_crosshair()
             elif self.state == PAUSED:
                 self._dim(150)
@@ -525,10 +629,46 @@ class Game:
             elif self.state == GAME_OVER:
                 self._dim(180)
                 self.over_menu.draw(self.screen, self.fonts, self.elapsed, accent=(150, 20, 20))
+                if self.mode == 'waves':
+                    self._draw_gameover_stats()
 
         fps = int(self.clock.get_fps())
         pygame.display.set_caption(f"{TITLE}  |  FPS: {fps}")
         pygame.display.flip()
+
+    def _draw_wave_banner(self):
+        if self.wave_state == 'intro':
+            text = f"ВОЛНА {self.wave}" + ("   —   БОСС!" if self.wave_is_boss else "")
+            sub = "приготовься"
+            color = (235, 80, 60) if self.wave_is_boss else (235, 220, 150)
+        elif self.wave_state == 'cleared':
+            text = f"ВОЛНА {self.wave} ЗАЧИЩЕНА"
+            sub = "следующая волна..."
+            color = (150, 230, 150)
+        else:
+            return
+        w, h = self.screen.get_size()
+        cx, cy = w // 2, int(h * 0.3)
+        big = self.font_title.render(text, True, color)
+        sh = self.font_title.render(text, True, (0, 0, 0))
+        self.screen.blit(sh, sh.get_rect(center=(cx + 3, cy + 3)))
+        self.screen.blit(big, big.get_rect(center=(cx, cy)))
+        ss = self.font_opt.render(sub, True, (205, 205, 205))
+        self.screen.blit(ss, ss.get_rect(center=(cx, cy + 58)))
+
+    def _draw_gameover_stats(self):
+        w, h = self.screen.get_size()
+        cx, y = w // 2, int(h * 0.4)
+        line1 = f"Волна {self.wave}   ·   Очки {self.score}"
+        if self.new_record:
+            line2, c2 = "НОВЫЙ РЕКОРД!", (255, 215, 90)
+        else:
+            line2, c2 = f"Рекорд: волна {self.best['wave']} · очки {self.best['score']}", (165, 165, 165)
+        for i, (ln, c) in enumerate(((line1, (235, 235, 235)), (line2, c2))):
+            s = self.font.render(ln, True, c)
+            sh = self.font.render(ln, True, (0, 0, 0))
+            self.screen.blit(sh, sh.get_rect(center=(cx + 2, y + i * 36 + 2)))
+            self.screen.blit(s, s.get_rect(center=(cx, y + i * 36)))
 
     def _draw_low_hp(self):
         frac = self.player.hp / self.player.max_hp
