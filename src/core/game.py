@@ -40,6 +40,13 @@ CAMPAIGN_LEVELS = [
      'weapon': 'sniper',  'spawn_cap': 14, 'spawn_int': 1.2, 'boss': True},
 ]
 
+DIFFICULTIES = {
+    'easy':   {'label': 'Лёгкий', 'hp': 0.75, 'dmg': 0.6, 'spawn': 0.8},
+    'normal': {'label': 'Норма',  'hp': 1.0,  'dmg': 1.0, 'spawn': 1.0},
+    'hard':   {'label': 'Хард',   'hp': 1.4,  'dmg': 1.5, 'spawn': 1.3},
+}
+DIFF_ORDER = ['easy', 'normal', 'hard']
+
 WEAPON_TRAUMA = {'pistol': 0.12, 'shotgun': 0.34, 'rifle': 0.09, 'sniper': 0.5}
 FLASH_SCALE = {'pistol': 0.9, 'shotgun': 1.5, 'rifle': 1.0, 'sniper': 1.7}
 SFX_VOL = {'footstep': 0.3, 'dash': 0.6, 'casing': 0.4, 'dryfire': 0.7}
@@ -47,6 +54,7 @@ LOW_HP = 0.3
 
 MENU = 'menu'
 LOCATION_SELECT = 'location_select'
+DIFFICULTY_SELECT = 'difficulty_select'
 PLAYING = 'playing'
 PAUSED = 'paused'
 GAME_OVER = 'game_over'
@@ -106,6 +114,8 @@ class Game:
         self.new_record = False
         self.best = scores.load_best()
 
+        self.difficulty = 'normal'
+
         self.campaign_level = 0
         self.level_cfg = None
         self.objective = None
@@ -127,6 +137,9 @@ class Game:
         loc_opts = [(THEMES[name]['label'], "loc:" + name) for name in THEME_ORDER]
         loc_opts.append(("Назад", "menu"))
         self.loc_menu = Menu("ВЫБОР ЛОКАЦИИ", loc_opts)
+        diff_opts = [(DIFFICULTIES[d]['label'], "diff:" + d) for d in DIFF_ORDER]
+        diff_opts.append(("Назад", "menu"))
+        self.diff_menu = Menu("СЛОЖНОСТЬ", diff_opts, subtitle="насколько больно")
         self.pause_menu = Menu("ПАУЗА",
                                [("Продолжить", "resume"),
                                 ("В главное меню", "menu"),
@@ -191,7 +204,7 @@ class Game:
                 t = 'runner' if roll < 0.3 else ('brute' if roll > 0.9 else 'walker')
             else:
                 t = type_name
-            self.zombies.append(Zombie(wx, wy, t))
+            self.zombies.append(Zombie(wx, wy, t, self._hpm(), self._dmgm()))
             return True
         return False
 
@@ -217,8 +230,9 @@ class Game:
     def _start_wave(self, n):
         self.wave = n
         quota, max_alive, interval, is_boss = self._wave_plan(n)
-        self.wave_max_alive = max_alive
-        self.wave_interval = interval
+        sm = self._spm()
+        self.wave_max_alive = max(4, int(max_alive * sm))
+        self.wave_interval = max(0.25, interval / sm)
         self.wave_spawn_timer = 0.6
         self.wave_is_boss = is_boss
         self.to_spawn = 4 if is_boss else quota
@@ -333,9 +347,10 @@ class Game:
 
     def _update_campaign(self, dt):
         cfg = self.level_cfg
-        if len(self.zombies) < cfg['spawn_cap']:
+        sm = self._spm()
+        if len(self.zombies) < max(4, int(cfg['spawn_cap'] * sm)):
             self.spawn_timer += dt
-            if self.spawn_timer >= cfg['spawn_int']:
+            if self.spawn_timer >= cfg['spawn_int'] / sm:
                 self.spawn_timer = 0.0
                 self._spawn_zombie(self._campaign_zombie_type(self.campaign_level), ignore_cap=True)
 
@@ -395,7 +410,7 @@ class Game:
             if dist > 700:
                 break
         if best:
-            self.boss = Boss(best[1], best[2])
+            self.boss = Boss(best[1], best[2], self._hpm(), self._dmgm())
             self.audio.play('boss_roar', 1.0)
 
     def _spawn_minion(self):
@@ -408,7 +423,8 @@ class Game:
             wy = self.boss.pos.y + math.sin(ang) * r
             c, rr = int(wx // TILE_SIZE), int(wy // TILE_SIZE)
             if 0 <= rr < self.room.rows and 0 <= c < self.room.cols and self.room.grid[rr][c] == FLOOR:
-                self.zombies.append(Zombie(wx, wy, 'runner' if random.random() < 0.5 else 'walker'))
+                self.zombies.append(Zombie(wx, wy, 'runner' if random.random() < 0.5 else 'walker',
+                                           self._hpm(), self._dmgm()))
                 return
 
     def _next_theme(self):
@@ -437,12 +453,17 @@ class Game:
         self.room.resize(w, h)
 
     def _do_action(self, action):
-        if action == "mode:campaign":
-            self._start_campaign()
-        elif action.startswith("mode:"):
+        if action.startswith("mode:"):
             self.mode = action[5:]
-            self.loc_menu.sel = 0
-            self.state = LOCATION_SELECT
+            self.diff_menu.sel = 1
+            self.state = DIFFICULTY_SELECT
+        elif action.startswith("diff:"):
+            self.difficulty = action[5:]
+            if self.mode == 'campaign':
+                self._start_campaign()
+            else:
+                self.loc_menu.sel = 0
+                self.state = LOCATION_SELECT
         elif action.startswith("loc:"):
             self.start_game(THEME_ORDER.index(action[4:]))
         elif action == "restart":
@@ -463,6 +484,15 @@ class Game:
     def scr_h(self):
         return self.screen.get_height()
 
+    def _hpm(self):
+        return DIFFICULTIES[self.difficulty]['hp']
+
+    def _dmgm(self):
+        return DIFFICULTIES[self.difficulty]['dmg']
+
+    def _spm(self):
+        return DIFFICULTIES[self.difficulty]['spawn']
+
     # ---------- events ----------
 
     def handle_events(self):
@@ -478,6 +508,8 @@ class Game:
                 self._menu_events(event, self.main_menu, back=None)
             elif self.state == LOCATION_SELECT:
                 self._menu_events(event, self.loc_menu, back="menu")
+            elif self.state == DIFFICULTY_SELECT:
+                self._menu_events(event, self.diff_menu, back="menu")
             elif self.state == PAUSED:
                 self._menu_events(event, self.pause_menu, back="resume")
             elif self.state == GAME_OVER:
@@ -538,7 +570,7 @@ class Game:
 
         if self.state == PLAYING:
             self._update_play(dt)
-        elif self.state in (MENU, LOCATION_SELECT):
+        elif self.state in (MENU, LOCATION_SELECT, DIFFICULTY_SELECT):
             self.room.update(dt)
             span = max(1, self.room.width - self.scr_w())
             self.camera.offset.x = (self.camera.offset.x + 18 * dt) % span
@@ -630,7 +662,7 @@ class Game:
             self._update_campaign(dt)
         else:
             self.spawn_timer += dt
-            if self.spawn_timer >= SPAWN_EVERY:
+            if self.spawn_timer >= SPAWN_EVERY / self._spm():
                 self.spawn_timer = 0.0
                 self._spawn_zombie()
 
@@ -754,10 +786,11 @@ class Game:
 
     def draw(self):
         pygame.mouse.set_visible(self.state != PLAYING)
-        if self.state in (MENU, LOCATION_SELECT):
+        if self.state in (MENU, LOCATION_SELECT, DIFFICULTY_SELECT):
             self._draw_backdrop()
             self._dim(120)
-            menu = self.main_menu if self.state == MENU else self.loc_menu
+            menu = {MENU: self.main_menu, LOCATION_SELECT: self.loc_menu,
+                    DIFFICULTY_SELECT: self.diff_menu}[self.state]
             menu.draw(self.screen, self.fonts, self.elapsed)
             if self.state == MENU and self.best['wave'] > 0:
                 rec = self.font_sub.render(
@@ -774,6 +807,8 @@ class Game:
                 self.screen.blit(flash, (0, 0))
             draw_hud(self.screen, self.player, self.score, self.font, self.font_sub,
                      self.room.label, self.combo, self.wave if self.mode == 'waves' else 0)
+            dl = self.font_sub.render(DIFFICULTIES[self.difficulty]['label'], True, (185, 185, 185))
+            self.screen.blit(dl, (self.scr_w() - dl.get_width() - 20, 52))
             if self.boss is not None:
                 self.boss.draw_health_bar(self.screen, self.font_sub)
             if self.state == PLAYING:

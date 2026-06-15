@@ -22,13 +22,14 @@ NAME = "ГНИЛОЙ КОЛОСС"
 
 
 class Boss:
-    def __init__(self, x, y):
+    def __init__(self, x, y, hp_mult=1.0, dmg_mult=1.0):
         spec = ZOMBIE_TYPES['boss']
         self.frames = _frames_for('boss')
-        self.max_hp = spec['hp']
-        self.hp = spec['hp']
+        self.max_hp = max(1, int(spec['hp'] * hp_mult))
+        self.hp = self.max_hp
         self.base_speed = spec['speed']
         self.score = spec['score']
+        self.dmg_mult = dmg_mult
 
         self.pos = pygame.math.Vector2(x, y)
         self.angle = 0.0
@@ -107,7 +108,7 @@ class Boss:
             self.anim = (self.anim + ANIM_FPS * dt) % len(self.frames)
             if self.hit_rect.colliderect(player_hit_rect) and self.melee_cd <= 0:
                 self.melee_cd = MELEE_CD
-                events.append(('player_dmg', MELEE_DAMAGE, d, 320))
+                events.append(('player_dmg', int(MELEE_DAMAGE * self.dmg_mult), d, 320))
                 events.append(('sound', 'snarl'))
             self.attack_cd -= dt
             if self.attack_cd <= 0:
@@ -123,7 +124,7 @@ class Boss:
                 events.append(('shockwave', self.pos.x, self.pos.y))
                 events.append(('sound', 'boss_slam'))
                 if (target - self.pos).length() < SLAM_RADIUS:
-                    events.append(('player_dmg', SLAM_DAMAGE, d, 520))
+                    events.append(('player_dmg', int(SLAM_DAMAGE * self.dmg_mult), d, 520))
 
         elif self.state == 'slam':
             self.shock_r += SLAM_RADIUS / SLAM_ACTIVE * dt
@@ -141,7 +142,7 @@ class Boss:
             self.anim = (self.anim + ANIM_FPS * 2 * dt) % len(self.frames)
             crashed = self._move(self.charge_dir * CHARGE_SPEED, dt, wall_rects)
             if self.hit_rect.colliderect(player_hit_rect):
-                events.append(('player_dmg', CHARGE_DAMAGE, self.charge_dir, 700))
+                events.append(('player_dmg', int(CHARGE_DAMAGE * self.dmg_mult), self.charge_dir, 700))
                 events.append(('shake', 0.6))
                 self._recover(ph)
             elif crashed:

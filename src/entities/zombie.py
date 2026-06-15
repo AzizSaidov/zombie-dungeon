@@ -54,14 +54,14 @@ def _frames_for(type_name):
 
 
 class Zombie:
-    def __init__(self, x, y, type_name='walker'):
+    def __init__(self, x, y, type_name='walker', hp_mult=1.0, dmg_mult=1.0):
         spec = ZOMBIE_TYPES[type_name]
         self.type_name = type_name
         self.frames = _frames_for(type_name)
-        self.max_hp = spec['hp']
-        self.hp = spec['hp']
+        self.max_hp = max(1, int(spec['hp'] * hp_mult))
+        self.hp = self.max_hp
         self.speed = spec['speed']
-        self.damage = spec['damage']
+        self.damage = spec['damage'] * dmg_mult
         self.score = spec['score']
 
         self.pos = pygame.math.Vector2(x, y)
