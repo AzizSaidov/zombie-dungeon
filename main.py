@@ -1,4 +1,3 @@
-# Точка входа в игру Dead Crawler
 import pygame
 from src.core.game import Game
 
