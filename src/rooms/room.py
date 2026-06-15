@@ -3,7 +3,7 @@ import random
 import pygame
 
 from src.core.settings import TILE_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT
-from src.core.effects import create_vignette, FogLayer, DripSystem, Flicker, RainLayer, Lightning
+from src.core.effects import create_vignette, FogLayer, DripSystem, Flicker, RainLayer, Lightning, SnowLayer
 from src.core.lighting import LightingSystem
 from src.rooms.props import generate_props
 from src.rooms.layouts import LAYOUTS, FLOOR, WALL
@@ -76,12 +76,32 @@ THEMES = {
         'flicker':      None,
         'rain':         True,
         'lightning':    True,
+        'ambient':      'rain',
         'vignette':     (4, 6, 14),
+        'music':        '',
+    },
+    'snow': {
+        'label':        'Метель',
+        'floor_style':  'snow',
+        'floor':        [(148, 156, 172), (144, 152, 168), (152, 160, 176)],
+        'detail':       [(120, 128, 146), (212, 220, 236)],
+        'wall':         (118, 126, 140),
+        'wall_top':     (188, 198, 214),
+        'darkness':     150,
+        'tint':         (10, 12, 18),
+        'player_light': 240,
+        'light_color':  (50, 54, 66),
+        'fog':          1.0,
+        'drips':        False,
+        'flicker':      None,
+        'snow':         True,
+        'ambient':      'wind',
+        'vignette':     (6, 8, 14),
         'music':        '',
     },
 }
 
-THEME_ORDER = ['forest', 'town', 'hospital', 'storm']
+THEME_ORDER = ['forest', 'town', 'hospital', 'storm', 'snow']
 
 
 class Room:
@@ -120,6 +140,8 @@ class Room:
         self.flicker = Flicker(kind=t['flicker']) if t['flicker'] else None
         self.rain = RainLayer(self.scr_w, self.scr_h) if t.get('rain') else None
         self.lightning = Lightning() if t.get('lightning') else None
+        self.snow = SnowLayer(self.scr_w, self.scr_h) if t.get('snow') else None
+        self.ambient = t.get('ambient')
 
         self._load_music(t['music'])
 
@@ -133,6 +155,8 @@ class Room:
             self.drips.resize(w, h)
         if self.rain:
             self.rain.resize(w, h)
+        if self.snow:
+            self.snow.resize(w, h)
 
     def _load_music(self, filename):
         path = os.path.join('assets', 'sounds', filename)
@@ -231,6 +255,15 @@ class Room:
                 gs = pygame.Surface((20, 16), pygame.SRCALPHA)
                 pygame.draw.ellipse(gs, (*d_dark, 70), gs.get_rect())
                 surf.blit(gs, (gx - 10, gy - 8))
+        elif style == 'snow':
+            for _ in range(rng.randint(3, 6)):
+                sx, sy = x + rng.randint(2, TILE_SIZE - 2), y + rng.randint(2, TILE_SIZE - 2)
+                surf.set_at((sx, sy), d_light)
+            if rng.random() < 0.12:
+                gx, gy = x + rng.randint(10, TILE_SIZE - 10), y + rng.randint(10, TILE_SIZE - 10)
+                gs = pygame.Surface((24, 12), pygame.SRCALPHA)
+                pygame.draw.ellipse(gs, (*d_light, 70), gs.get_rect())
+                surf.blit(gs, (gx - 12, gy - 6))
 
     # ---------- loop ----------
 
@@ -245,6 +278,8 @@ class Room:
             self.rain.update(dt)
         if self.lightning:
             self.lightning.update(dt)
+        if self.snow:
+            self.snow.update(dt)
 
     def draw_floor(self, surface, camera):
         surface.blit(self.floor_surface, (-int(camera.offset.x), -int(camera.offset.y)))
@@ -288,6 +323,8 @@ class Room:
 
         if self.rain:
             self.rain.draw(surface)
+        if self.snow:
+            self.snow.draw(surface)
         if self.lightning and self.lightning.value > 0.01:
             flash = pygame.Surface((self.scr_w, self.scr_h), pygame.SRCALPHA)
             flash.fill((170, 195, 255, int(115 * self.lightning.value)))

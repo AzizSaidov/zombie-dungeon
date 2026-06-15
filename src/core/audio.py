@@ -275,6 +275,19 @@ def _rain_loop():
     return out
 
 
+def _wind_loop():
+    f = _freq()
+    n = int(f * 2.0)
+    out = []
+    prev = 0.0
+    for i in range(n):
+        t = i / f
+        prev = prev * 0.82 + random.uniform(-1, 1) * 0.18
+        mod = 0.5 + 0.5 * math.sin(2 * math.pi * 0.4 * t)
+        out.append(prev * mod * 0.16)
+    return out
+
+
 def _thunder():
     f = _freq()
     n = int(f * 1.7)
@@ -347,22 +360,22 @@ class Audio:
             if name in ('growl1', 'growl2', 'gurgle', 'hiss'):
                 snd.set_volume(0.55)
 
-        self.rain_snd = _to_sound(_rain_loop())
-        self.rain_ch = None
-        self.rain_playing = False
+        self.ambient_snds = {'rain': _to_sound(_rain_loop()), 'wind': _to_sound(_wind_loop())}
+        self.ambient_kind = None
+        self.ambient_ch = None
 
-    def set_rain(self, on):
-        if not self.ok:
+    def set_ambient(self, kind):
+        if not self.ok or kind == self.ambient_kind:
             return
-        if on and not self.rain_playing:
-            self.rain_ch = self.rain_snd.play(loops=-1)
-            if self.rain_ch:
-                self.rain_ch.set_volume(0.4)
-            self.rain_playing = True
-        elif not on and self.rain_playing:
-            if self.rain_ch:
-                self.rain_ch.stop()
-            self.rain_playing = False
+        if self.ambient_ch:
+            self.ambient_ch.stop()
+            self.ambient_ch = None
+        self.ambient_kind = kind
+        snd = self.ambient_snds.get(kind)
+        if snd:
+            self.ambient_ch = snd.play(loops=-1)
+            if self.ambient_ch:
+                self.ambient_ch.set_volume(0.4 if kind == 'rain' else 0.32)
 
     def play(self, name, volume=1.0):
         if not self.ok:

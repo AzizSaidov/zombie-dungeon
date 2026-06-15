@@ -162,6 +162,43 @@ class RainLayer:
                              (int(x), int(y)), (int(x - dx), int(y - ln)), 1)
 
 
+class SnowLayer:
+    def __init__(self, w, h, intensity=1.0):
+        self.w = w
+        self.h = h
+        self.flakes = [self._new(True) for _ in range(int(190 * intensity))]
+        self._t = 0.0
+
+    def _new(self, anywhere=False):
+        return [random.uniform(0, self.w),
+                random.uniform(-self.h, self.h) if anywhere else random.uniform(-30, -4),
+                random.uniform(28, 95), random.uniform(1.0, 3.2), random.uniform(0, math.tau)]
+
+    def resize(self, w, h):
+        self.w = w
+        self.h = h
+
+    def update(self, dt):
+        self._t += dt
+        wind = math.sin(self._t * 0.3) * 32
+        for fl in self.flakes:
+            fl[1] += fl[2] * dt
+            fl[4] += dt * 2.0
+            fl[0] += (math.sin(fl[4]) * 18 + wind) * dt
+            if fl[1] > self.h:
+                fl[0] = random.uniform(0, self.w)
+                fl[1] = random.uniform(-30, -4)
+            if fl[0] < -12:
+                fl[0] = self.w + 12
+            elif fl[0] > self.w + 12:
+                fl[0] = -12
+
+    def draw(self, surface):
+        for x, y, sp, sz, ph in self.flakes:
+            c = 240 if sz > 2.2 else 205
+            pygame.draw.circle(surface, (c, c, 248), (int(x), int(y)), int(sz))
+
+
 class Lightning:
     def __init__(self):
         self.value = 0.0

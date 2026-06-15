@@ -413,6 +413,49 @@ def draw_sign(surf, x, y):
     return None
 
 
+# ---------- STORM / SNOW ----------
+
+def draw_wet_puddle(surf, x, y):
+    w = random.randint(28, 52)
+    h = random.randint(14, 28)
+    s = pygame.Surface((w * 2, h), pygame.SRCALPHA)
+    pygame.draw.ellipse(s, (30, 40, 60, 150), s.get_rect())
+    pygame.draw.ellipse(s, (60, 82, 112, 120), (3, 2, w * 2 - 6, h - 4), 1)
+    pygame.draw.ellipse(s, (120, 150, 195, 90), (w - 10, 3, 16, 5))
+    surf.blit(s, (x - w, y - h // 2))
+    return None
+
+
+def draw_snowdrift(surf, x, y):
+    w = random.randint(30, 62)
+    h = random.randint(12, 22)
+    _shadow(surf, x, y + 4, w, h // 2, 40)
+    pygame.draw.ellipse(surf, (206, 214, 230), (x - w // 2, y - h // 2, w, h))
+    pygame.draw.ellipse(surf, (236, 242, 252), (x - w // 2 + 4, y - h // 2 + 2, w - 8, h - 7))
+    return None
+
+
+def draw_snowman(surf, x, y):
+    _shadow(surf, x, y + 10, 28, 12, 70)
+    pygame.draw.circle(surf, (234, 240, 248), (x, y + 8), 12)
+    pygame.draw.circle(surf, (234, 240, 248), (x, y - 6), 9)
+    pygame.draw.circle(surf, (248, 251, 255), (x, y - 6), 9, 1)
+    pygame.draw.circle(surf, (20, 20, 24), (x - 3, y - 8), 1)
+    pygame.draw.circle(surf, (20, 20, 24), (x + 3, y - 8), 1)
+    pygame.draw.polygon(surf, (212, 120, 40), [(x, y - 6), (x + 8, y - 5), (x, y - 4)])
+    for by in (y + 4, y + 9):
+        pygame.draw.circle(surf, (40, 40, 46), (x, by), 1)
+    return None
+
+
+def draw_snow_pine(surf, x, y):
+    draw_pine(surf, x, y)
+    for w, dy in [(40, 12), (32, -2), (24, -16), (16, -30)]:
+        pygame.draw.line(surf, (220, 228, 242), (x - w + 6, y + dy - 2), (x + w - 6, y + dy - 2), 3)
+    pygame.draw.polygon(surf, (236, 242, 252), [(x - 7, y - 30), (x + 7, y - 30), (x, y - 46)])
+    return None
+
+
 PROP_SETS = {
     'forest': [
         (draw_tree, 110, 60),
@@ -443,6 +486,25 @@ PROP_SETS = {
         (draw_plant, 10, 40),
         (draw_sign, 8, 50),
         (draw_blood, 26, 30),
+    ],
+    'storm': [
+        (draw_car, 18, 56),
+        (draw_streetlight, 20, 64),
+        (draw_dumpster, 10, 56),
+        (draw_wet_puddle, 32, 38),
+        (draw_hydrant, 10, 40),
+        (draw_trashcan, 16, 36),
+        (draw_manhole, 8, 60),
+        (draw_debris, 18, 40),
+    ],
+    'snow': [
+        (draw_snow_pine, 70, 56),
+        (draw_pine, 38, 56),
+        (draw_rock, 22, 40),
+        (draw_snowdrift, 44, 42),
+        (draw_log, 12, 50),
+        (draw_stump, 14, 44),
+        (draw_snowman, 4, 90),
     ],
 }
 

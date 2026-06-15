@@ -579,7 +579,7 @@ class Game:
             self.camera.offset.x = (self.camera.offset.x + 18 * dt) % span
             self.camera.offset.y = (self.room.height - self.scr_h()) * 0.5
 
-        self.audio.set_rain(self.room.rain is not None)
+        self.audio.set_ambient(self.room.ambient)
         if room_updated and self.room.lightning is not None and self.room.lightning.struck:
             self.audio.play('thunder', 0.85)
 
