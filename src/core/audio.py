@@ -264,6 +264,32 @@ def _boom(dur, base, vol):
     return out
 
 
+def _rain_loop():
+    f = _freq()
+    n = int(f * 1.5)
+    out = []
+    prev = 0.0
+    for i in range(n):
+        prev = prev * 0.6 + random.uniform(-1, 1) * 0.4
+        out.append(prev * 0.18)
+    return out
+
+
+def _thunder():
+    f = _freq()
+    n = int(f * 1.7)
+    out = []
+    prev = 0.0
+    for i in range(n):
+        t = i / f
+        crack = random.uniform(-1, 1) * math.exp(-t * 8) * 0.5
+        rumble = math.exp(-t * 1.5)
+        low = math.sin(2 * math.pi * (44 + 9 * math.sin(t * 3)) * t) * 0.5
+        prev = prev * 0.85 + random.uniform(-1, 1) * 0.15
+        out.append((crack + (low + prev * 0.6) * rumble) * 0.6)
+    return out
+
+
 def _boss_roar(dur, base, vol):
     f = _freq()
     n = int(f * dur)
@@ -306,6 +332,7 @@ class Audio:
             'zombie_die':   _to_sound(_zombie_die()),
             'boss_slam':    _to_sound(_verb(_boom(0.55, 48, 0.95), decay=0.45, taps=5, delay=0.05)),
             'boss_roar':    _to_sound(_boss_roar(1.2, 55, 0.85)),
+            'thunder':      _to_sound(_verb(_thunder(), decay=0.4, taps=4, delay=0.08)),
             'pickup':       _to_sound(_pickup()),
             'heal':         _to_sound(_heal()),
             'reload':       _to_sound(_reload()),
@@ -319,6 +346,23 @@ class Audio:
         for name, snd in self.sfx.items():
             if name in ('growl1', 'growl2', 'gurgle', 'hiss'):
                 snd.set_volume(0.55)
+
+        self.rain_snd = _to_sound(_rain_loop())
+        self.rain_ch = None
+        self.rain_playing = False
+
+    def set_rain(self, on):
+        if not self.ok:
+            return
+        if on and not self.rain_playing:
+            self.rain_ch = self.rain_snd.play(loops=-1)
+            if self.rain_ch:
+                self.rain_ch.set_volume(0.4)
+            self.rain_playing = True
+        elif not on and self.rain_playing:
+            if self.rain_ch:
+                self.rain_ch.stop()
+            self.rain_playing = False
 
     def play(self, name, volume=1.0):
         if not self.ok:

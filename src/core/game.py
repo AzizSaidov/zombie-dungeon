@@ -568,13 +568,20 @@ class Game:
         if dt > 0.05:
             dt = 0.05
 
+        room_updated = False
         if self.state == PLAYING:
             self._update_play(dt)
+            room_updated = True
         elif self.state in (MENU, LOCATION_SELECT, DIFFICULTY_SELECT):
             self.room.update(dt)
+            room_updated = True
             span = max(1, self.room.width - self.scr_w())
             self.camera.offset.x = (self.camera.offset.x + 18 * dt) % span
             self.camera.offset.y = (self.room.height - self.scr_h()) * 0.5
+
+        self.audio.set_rain(self.room.rain is not None)
+        if room_updated and self.room.lightning is not None and self.room.lightning.struck:
+            self.audio.play('thunder', 0.85)
 
     def _update_play(self, dt):
         if self.hitstop > 0:

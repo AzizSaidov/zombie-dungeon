@@ -3,7 +3,7 @@ import random
 import pygame
 
 from src.core.settings import TILE_SIZE, SCREEN_WIDTH, SCREEN_HEIGHT
-from src.core.effects import create_vignette, FogLayer, DripSystem, Flicker
+from src.core.effects import create_vignette, FogLayer, DripSystem, Flicker, RainLayer, Lightning
 from src.core.lighting import LightingSystem
 from src.rooms.props import generate_props
 from src.rooms.layouts import LAYOUTS, FLOOR, WALL
@@ -60,9 +60,28 @@ THEMES = {
         'vignette':     (4, 10, 6),
         'music':        'hospital.ogg',
     },
+    'storm': {
+        'label':        'Гроза',
+        'floor_style':  'asphalt',
+        'floor':        [(40, 44, 52), (38, 42, 50), (42, 46, 54)],
+        'detail':       [(28, 30, 38), (74, 80, 92)],
+        'wall':         (46, 48, 56),
+        'wall_top':     (70, 74, 84),
+        'darkness':     198,
+        'tint':         (6, 8, 16),
+        'player_light': 215,
+        'light_color':  (44, 50, 64),
+        'fog':          0.6,
+        'drips':        False,
+        'flicker':      None,
+        'rain':         True,
+        'lightning':    True,
+        'vignette':     (4, 6, 14),
+        'music':        '',
+    },
 }
 
-THEME_ORDER = ['forest', 'town', 'hospital']
+THEME_ORDER = ['forest', 'town', 'hospital', 'storm']
 
 
 class Room:
@@ -99,6 +118,8 @@ class Room:
         self.fog = FogLayer(self.scr_w, self.scr_h, density=t['fog']) if t['fog'] > 0 else None
         self.drips = DripSystem(self.scr_w, self.scr_h) if t['drips'] else None
         self.flicker = Flicker(kind=t['flicker']) if t['flicker'] else None
+        self.rain = RainLayer(self.scr_w, self.scr_h) if t.get('rain') else None
+        self.lightning = Lightning() if t.get('lightning') else None
 
         self._load_music(t['music'])
 
@@ -110,10 +131,12 @@ class Room:
             self.fog.resize(w, h)
         if self.drips:
             self.drips.resize(w, h)
+        if self.rain:
+            self.rain.resize(w, h)
 
     def _load_music(self, filename):
         path = os.path.join('assets', 'sounds', filename)
-        if os.path.exists(path):
+        if filename and os.path.exists(path):
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(0.45)
             pygame.mixer.music.play(-1)
@@ -218,6 +241,10 @@ class Room:
             self.drips.update(dt)
         if self.flicker:
             self.flicker.update(dt)
+        if self.rain:
+            self.rain.update(dt)
+        if self.lightning:
+            self.lightning.update(dt)
 
     def draw_floor(self, surface, camera):
         surface.blit(self.floor_surface, (-int(camera.offset.x), -int(camera.offset.y)))
@@ -244,6 +271,8 @@ class Room:
         darkness = self.darkness
         if self.flicker and self.flicker.kind == 'fluorescent':
             darkness = int(darkness + (1.0 - self.flicker.value) * 70)
+        if self.lightning:
+            darkness = int(darkness * (1.0 - 0.7 * self.lightning.value))
 
         self.lighting.render(surface, darkness, self.tint, lights)
         surface.blit(self.vignette, (0, 0))
@@ -256,3 +285,10 @@ class Room:
 
         if self.drips:
             self.drips.draw(surface)
+
+        if self.rain:
+            self.rain.draw(surface)
+        if self.lightning and self.lightning.value > 0.01:
+            flash = pygame.Surface((self.scr_w, self.scr_h), pygame.SRCALPHA)
+            flash.fill((170, 195, 255, int(115 * self.lightning.value)))
+            surface.blit(flash, (0, 0))

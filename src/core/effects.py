@@ -130,6 +130,60 @@ class Popups:
             surface.blit(txt, rect)
 
 
+class RainLayer:
+    def __init__(self, w, h, intensity=1.0, wind=130, color=(150, 170, 210)):
+        self.w = w
+        self.h = h
+        self.wind = wind
+        self.color = color
+        self.drops = [self._new() for _ in range(int(230 * intensity))]
+
+    def _new(self):
+        return [random.uniform(-120, self.w + 120), random.uniform(-self.h, self.h),
+                random.uniform(950, 1350), random.uniform(11, 22)]
+
+    def resize(self, w, h):
+        self.w = w
+        self.h = h
+
+    def update(self, dt):
+        for d in self.drops:
+            d[1] += d[2] * dt
+            d[0] += self.wind * dt
+            if d[1] > self.h:
+                d[0] = random.uniform(-120, self.w + 120)
+                d[1] = random.uniform(-60, -10)
+                d[2] = random.uniform(950, 1350)
+
+    def draw(self, surface):
+        for x, y, sp, ln in self.drops:
+            dx = self.wind / sp * ln
+            pygame.draw.line(surface, self.color,
+                             (int(x), int(y)), (int(x - dx), int(y - ln)), 1)
+
+
+class Lightning:
+    def __init__(self):
+        self.value = 0.0
+        self.struck = False
+        self._t = 0.0
+        self._next = random.uniform(4.0, 9.0)
+        self._seq = []
+
+    def update(self, dt):
+        self.struck = False
+        self._t += dt
+        if self._seq:
+            self.value = self._seq.pop(0)
+        else:
+            self.value = max(0.0, self.value - dt * 4.0)
+        if self._t >= self._next:
+            self._t = 0.0
+            self._next = random.uniform(5.0, 12.0)
+            self._seq = [0.9, 0.35, 0.8, 0.5, 1.0, 0.6, 0.3, 0.15]
+            self.struck = True
+
+
 class Flicker:
     def __init__(self, base=1.0, kind='fluorescent'):
         self.base = base

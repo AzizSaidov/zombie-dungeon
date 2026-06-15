@@ -103,4 +103,5 @@ LAYOUTS = {
     'forest': forest_layout,
     'town': town_layout,
     'hospital': hospital_layout,
+    'storm': town_layout,
 }
