@@ -51,6 +51,77 @@ def town_layout(cols, rows, rng):
     return g
 
 
+def _seal_unreachable(g):
+    rows = len(g)
+    cols = len(g[0])
+    cc, cr = cols // 2, rows // 2
+    start = None
+    for radius in range(max(cols, rows)):
+        for dr in range(-radius, radius + 1):
+            for dc in range(-radius, radius + 1):
+                r, c = cr + dr, cc + dc
+                if 0 < r < rows - 1 and 0 < c < cols - 1 and g[r][c] == FLOOR:
+                    start = (r, c)
+                    break
+            if start:
+                break
+        if start:
+            break
+    if not start:
+        return g
+    seen = {start}
+    stack = [start]
+    while stack:
+        r, c = stack.pop()
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and g[nr][nc] == FLOOR and (nr, nc) not in seen:
+                seen.add((nr, nc))
+                stack.append((nr, nc))
+    for r in range(rows):
+        for c in range(cols):
+            if g[r][c] == FLOOR and (r, c) not in seen:
+                g[r][c] = WALL
+    return g
+
+
+def storm_layout(cols, rows, rng):
+    g = _blank(cols, rows)
+    shells = []
+    for _ in range(rng.randint(4, 7)):
+        bw = rng.randint(6, 12)
+        bh = rng.randint(6, 12)
+        bx = rng.randint(2, max(2, cols - 3 - bw))
+        by = rng.randint(2, max(2, rows - 3 - bh))
+        shells.append((bx, by, bw, bh))
+        for r in range(by, by + bh):
+            for c in range(bx, bx + bw):
+                if r in (by, by + bh - 1) or c in (bx, bx + bw - 1):
+                    g[r][c] = WALL
+    for _ in range(rng.randint(10, 16)):
+        cr = rng.randint(2, rows - 3)
+        cc = rng.randint(2, cols - 3)
+        for _ in range(rng.randint(1, 2)):
+            r = cr + rng.randint(-1, 1)
+            c = cc + rng.randint(-1, 1)
+            if 1 < r < rows - 1 and 1 < c < cols - 1:
+                g[r][c] = WALL
+    for (bx, by, bw, bh) in shells:
+        for _ in range(rng.randint(2, 4)):
+            side = rng.randint(0, 3)
+            if side in (0, 1):
+                rr = by if side == 0 else by + bh - 1
+                c0 = rng.randint(bx, bx + bw - 2)
+                g[rr][c0] = FLOOR
+                g[rr][c0 + 1] = FLOOR
+            else:
+                cc = bx if side == 2 else bx + bw - 1
+                r0 = rng.randint(by, by + bh - 2)
+                g[r0][cc] = FLOOR
+                g[r0 + 1][cc] = FLOOR
+    return _seal_unreachable(g)
+
+
 def hospital_layout(cols, rows, rng):
     g = _blank(cols, rows)
 
@@ -103,6 +174,6 @@ LAYOUTS = {
     'forest': forest_layout,
     'town': town_layout,
     'hospital': hospital_layout,
-    'storm': town_layout,
+    'storm': storm_layout,
     'snow': forest_layout,
 }
