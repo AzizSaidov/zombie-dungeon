@@ -277,15 +277,29 @@ def _rain_loop():
 
 def _wind_loop():
     f = _freq()
-    n = int(f * 2.0)
+    dur = 7.5
+    n = int(f * dur)
     out = []
-    prev = 0.0
+    low = 0.0
+    hi = 0.0
+    ph = random.uniform(0, math.tau)
     for i in range(n):
         t = i / f
-        prev = prev * 0.82 + random.uniform(-1, 1) * 0.18
-        mod = 0.5 + 0.5 * math.sin(2 * math.pi * 0.4 * t)
-        out.append(prev * mod * 0.16)
-    return out
+        nz = random.uniform(-1, 1)
+        low = low * 0.93 + nz * 0.07
+        hi = hi * 0.55 + nz * 0.45
+        gust = (0.5
+                + 0.24 * math.sin(2 * math.pi * 0.11 * t + ph)
+                + 0.15 * math.sin(2 * math.pi * 0.29 * t + 1.3)
+                + 0.08 * math.sin(2 * math.pi * 0.061 * t + 2.7))
+        gust = max(0.12, gust)
+        out.append((low * 0.85 + hi * 0.14) * gust * 0.26)
+    xf = int(f * 0.6)
+    body = out[:n - xf]
+    for i in range(xf):
+        a = i / xf
+        body[i] = out[i] * a + out[n - xf + i] * (1 - a)
+    return body
 
 
 def _thunder():
