@@ -32,12 +32,12 @@ WAVE_CLEAR_TIME = 3.0
 BOSS_WAVE_EVERY = 5
 
 CAMPAIGN_LEVELS = [
-    {'theme': 'forest',   'cols': 40, 'rows': 30, 'objective': 'key',
-     'weapon': 'shotgun', 'spawn_cap': 9,  'spawn_int': 1.7},
-    {'theme': 'town',     'cols': 44, 'rows': 32, 'objective': 'fuel',
-     'weapon': 'rifle',   'spawn_cap': 12, 'spawn_int': 1.4},
-    {'theme': 'hospital', 'cols': 46, 'rows': 34, 'objective': 'vaccine',
-     'weapon': 'sniper',  'spawn_cap': 14, 'spawn_int': 1.2, 'boss': True},
+    {'theme': 'forest',   'cols': 48, 'rows': 36, 'objective': 'key',
+     'weapon': 'shotgun', 'spawn_cap': 11, 'spawn_int': 1.45},
+    {'theme': 'town',     'cols': 52, 'rows': 38, 'objective': 'fuel',
+     'weapon': 'rifle',   'spawn_cap': 14, 'spawn_int': 1.2},
+    {'theme': 'hospital', 'cols': 54, 'rows': 40, 'objective': 'vaccine',
+     'weapon': 'sniper',  'spawn_cap': 16, 'spawn_int': 1.0, 'boss': True},
 ]
 
 DIFFICULTIES = {
@@ -333,16 +333,16 @@ class Game:
         self.cross_kick = 0.0
 
         spawn_pt = pygame.math.Vector2(sx, sy)
-        ox, oy = self._find_floor_far([spawn_pt], 620)
+        ox, oy = self._find_floor_far([spawn_pt], 1000)
         self.objective = Objective(ox, oy, cfg['objective'])
-        ex, ey = self._find_floor_far([spawn_pt, pygame.math.Vector2(ox, oy)], 520)
+        ex, ey = self._find_floor_far([spawn_pt, pygame.math.Vector2(ox, oy)], 640)
         self.exit = ExitGate(ex, ey)
         wx, wy = self._find_floor_far([spawn_pt], 300)
         self.weapon_pickups = [WeaponPickup(wx, wy, cfg['weapon'])]
         self.objective_done = False
         self.campaign_boss_pending = cfg.get('boss', False)
 
-        for _ in range(4):
+        for _ in range(6 + level * 2):
             self._spawn_zombie(self._campaign_zombie_type(level), ignore_cap=True)
 
     def _update_campaign(self, dt):
@@ -873,7 +873,7 @@ class Game:
         self.screen.blit(stage, (20, 54))
 
         if not self.objective_done:
-            text, target, col = f"ЦЕЛЬ: найти {self.objective.label}", self.objective.pos, self.objective.color
+            text, target, col = f"ЦЕЛЬ: найти {self.objective.label}", None, self.objective.color
         elif self.campaign_boss_pending and self.boss is not None:
             text, target, col = "УБЕЙ БОССА", self.boss.pos, (235, 90, 70)
         elif self.exit.open:

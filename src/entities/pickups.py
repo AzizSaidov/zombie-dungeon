@@ -84,7 +84,7 @@ class Objective:
         return (p - self.pos).length() < r
 
     def light(self):
-        return (self.pos.x, self.pos.y, 100, tuple(c // 4 for c in self.color))
+        return (self.pos.x, self.pos.y, 150, tuple(c // 4 for c in self.color))
 
     def draw(self, surface, camera, font=None):
         sx, sy = camera.world_to_screen(self.pos.x, self.pos.y)
