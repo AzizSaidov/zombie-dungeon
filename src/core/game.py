@@ -427,11 +427,6 @@ class Game:
                                            self._hpm(), self._dmgm()))
                 return
 
-    def _next_theme(self):
-        self._theme_idx = (self._theme_idx + 1) % len(THEME_ORDER)
-        self.room.set_theme(THEME_ORDER[self._theme_idx])
-        self._reset_level()
-
     # ---------- helpers ----------
 
     def _aim_offset(self):
@@ -542,8 +537,6 @@ class Game:
                 self.player.start_dash()
             elif event.key == pygame.K_b:
                 self._spawn_boss()
-            elif event.key == pygame.K_TAB:
-                self._next_theme()
             elif event.key == pygame.K_r:
                 self.player.reload()
             elif event.key == pygame.K_q:
