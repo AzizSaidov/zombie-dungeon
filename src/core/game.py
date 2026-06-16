@@ -783,8 +783,8 @@ class Game:
             self.popups.add(x, y, f'+{got} патронов', (240, 210, 120))
             self.audio.play('pickup')
             return True
-        self.player.refill_all()
-        self.player.heal(25)
+        self.player.resupply()
+        self.player.heal(15)
         self.popups.add(x, y, 'АРСЕНАЛ', (255, 222, 120))
         self.audio.play('pickup')
         return True

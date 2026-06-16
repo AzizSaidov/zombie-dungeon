@@ -19,9 +19,9 @@ def roll_drop(zombie_type, player):
     if random.random() > DROP_CHANCE.get(zombie_type, 0.18):
         return None
     r = random.random()
-    if r < 0.12:
+    if r < 0.06:
         kind = 'arsenal'
-    elif r < 0.46:
+    elif r < 0.42:
         kind = 'medkit'
     else:
         kind = 'ammo'

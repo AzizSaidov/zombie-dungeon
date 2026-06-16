@@ -164,13 +164,14 @@ class Player(pygame.sprite.Sprite):
             total = 0
             for ow in self.weapons:
                 if ow.reserve is not None:
-                    total += ow.add_reserve(ow.s['mag'])
+                    total += ow.add_reserve(max(1, ow.s['mag'] // 2))
             return total
-        return w.add_reserve(w.s['mag'] * 2)
+        return w.add_reserve(w.s['mag'])
 
-    def refill_all(self):
+    def resupply(self):
         for w in self.weapons:
-            w.refill()
+            w.in_mag = w.s['mag']
+            w.add_reserve(w.s['mag'])
 
     def update(self, dt, wall_rects, cam_offset=(0, 0)):
         self.hurt_timer = max(0, self.hurt_timer - dt)
